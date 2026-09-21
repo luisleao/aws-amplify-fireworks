@@ -79,6 +79,18 @@ npx cdk bootstrap        # só na primeira vez, por conta/região
 npm run deploy
 ```
 
+A stack herda conta e região do perfil da AWS CLI em uso. Se a sua organização
+restringe regiões por SCP, informe a região explicitamente — senão o deploy
+falha com `AccessDenied ... explicit deny in a service control policy`:
+
+```bash
+CDK_DEFAULT_REGION=us-east-2 AWS_REGION=us-east-2 npm run deploy
+```
+
+O app do Amplify precisa ficar na **mesma região** da Event API: o telão assina
+um domínio fixo, e a role de compute publica via SigV4 assinado para aquela
+região.
+
 Guarde os outputs:
 
 | Output | Vai para |
