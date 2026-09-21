@@ -71,7 +71,6 @@ type Layer = {
 };
 
 type Shell = {
-  shock: { radius: number; life: number };
   /** Mira mais ao centro e mais alto — figuras precisam caber inteiras na tela. */
   centered?: boolean;
   layers: readonly Layer[];
@@ -86,7 +85,6 @@ const SPHERE: Direction = { kind: "sphere" };
  */
 const SHELLS: Record<AnimationId, Shell> = {
   peony: {
-    shock: { radius: 96, life: 260 },
     layers: [
       {
         count: 112,
@@ -114,7 +112,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   chrysanthemum: {
-    shock: { radius: 88, life: 240 },
     layers: [
       {
         count: 132,
@@ -133,7 +130,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   willow: {
-    shock: { radius: 80, life: 290 },
     layers: [
       {
         count: 92,
@@ -154,7 +150,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   palm: {
-    shock: { radius: 104, life: 270 },
     layers: [
       {
         count: 144,
@@ -181,7 +176,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   ring: {
-    shock: { radius: 78, life: 220 },
     layers: [
       {
         count: 104,
@@ -198,7 +192,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   star: {
-    shock: { radius: 92, life: 250 },
     centered: true,
     layers: [
       {
@@ -229,7 +222,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   heart: {
-    shock: { radius: 90, life: 250 },
     centered: true,
     layers: [
       {
@@ -258,7 +250,6 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   spiral: {
-    shock: { radius: 86, life: 240 },
     centered: true,
     layers: [
       {
@@ -275,9 +266,8 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   crackle: {
-    // Onda curta de propósito: o espetáculo não é a explosão, é o chiado
-    // que vem depois dela.
-    shock: { radius: 70, life: 170 },
+    // Abertura contida de propósito: o espetáculo não é a explosão, é o
+    // chiado que vem depois dela.
     layers: [
       {
         count: 28,
@@ -364,16 +354,6 @@ type Rocket = {
   animation: AnimationId;
 };
 
-/** Anel que corre à frente das estrelas no instante da explosão. */
-type Shockwave = {
-  x: number;
-  y: number;
-  age: number;
-  life: number;
-  hue: number;
-  radius: number;
-};
-
 export type LaunchRequest = { animation: AnimationId; color: ColorId };
 
 export class FireworksEngine {
@@ -381,7 +361,6 @@ export class FireworksEngine {
   private readonly context: CanvasRenderingContext2D;
   private particles: Particle[] = [];
   private rockets: Rocket[] = [];
-  private shockwaves: Shockwave[] = [];
   private queue: LaunchRequest[] = [];
   private width = 0;
   private height = 0;
@@ -433,7 +412,6 @@ export class FireworksEngine {
     this.resizeObserver = null;
     this.particles = [];
     this.rockets = [];
-    this.shockwaves = [];
     this.queue = [];
   }
 
@@ -490,12 +468,6 @@ export class FireworksEngine {
       particle.vx *= drag;
       particle.vy *= drag;
     }
-
-    for (let i = this.shockwaves.length - 1; i >= 0; i -= 1) {
-      const wave = this.shockwaves[i];
-      wave.age += dt;
-      if (wave.age >= wave.life) this.shockwaves.splice(i, 1);
-    }
   }
 
   private draw(dt: number): void {
@@ -508,18 +480,6 @@ export class FireworksEngine {
 
     ctx.globalCompositeOperation = "lighter";
     ctx.lineCap = "round";
-
-    for (const wave of this.shockwaves) {
-      const progress = wave.age / wave.life;
-      const remaining = 1 - progress;
-
-      // O anel fino que corre à frente das estrelas e some.
-      ctx.strokeStyle = `hsla(${wave.hue}, 72%, 90%, ${0.42 * remaining * remaining})`;
-      ctx.lineWidth = 2.6 * remaining;
-      ctx.beginPath();
-      ctx.arc(wave.x, wave.y, wave.radius * (0.25 + progress * 1.9), 0, TAU);
-      ctx.stroke();
-    }
 
     for (const rocket of this.rockets) {
       ctx.strokeStyle = `hsla(${rocket.hue}, 90%, 80%, 0.92)`;
@@ -616,16 +576,7 @@ export class FireworksEngine {
   }
 
   private explode(rocket: Rocket): void {
-    const shell = SHELLS[rocket.animation];
-    this.shockwaves.push({
-      x: rocket.x,
-      y: rocket.y,
-      age: 0,
-      life: shell.shock.life,
-      hue: rocket.hue,
-      radius: shell.shock.radius,
-    });
-    for (const layer of shell.layers) this.emitLayer(layer, rocket);
+    for (const layer of SHELLS[rocket.animation].layers) this.emitLayer(layer, rocket);
   }
 
   private emitLayer(layer: Layer, rocket: Rocket): void {
