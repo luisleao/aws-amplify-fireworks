@@ -71,7 +71,7 @@ type Layer = {
 };
 
 type Shell = {
-  flash: { radius: number; life: number };
+  shock: { radius: number; life: number };
   /** Mira mais ao centro e mais alto — figuras precisam caber inteiras na tela. */
   centered?: boolean;
   layers: readonly Layer[];
@@ -86,7 +86,7 @@ const SPHERE: Direction = { kind: "sphere" };
  */
 const SHELLS: Record<AnimationId, Shell> = {
   peony: {
-    flash: { radius: 96, life: 260 },
+    shock: { radius: 96, life: 260 },
     layers: [
       {
         count: 112,
@@ -114,7 +114,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   chrysanthemum: {
-    flash: { radius: 88, life: 240 },
+    shock: { radius: 88, life: 240 },
     layers: [
       {
         count: 132,
@@ -133,7 +133,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   willow: {
-    flash: { radius: 80, life: 290 },
+    shock: { radius: 80, life: 290 },
     layers: [
       {
         count: 92,
@@ -154,7 +154,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   palm: {
-    flash: { radius: 104, life: 270 },
+    shock: { radius: 104, life: 270 },
     layers: [
       {
         count: 144,
@@ -181,7 +181,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   ring: {
-    flash: { radius: 78, life: 220 },
+    shock: { radius: 78, life: 220 },
     layers: [
       {
         count: 104,
@@ -198,7 +198,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   star: {
-    flash: { radius: 92, life: 250 },
+    shock: { radius: 92, life: 250 },
     centered: true,
     layers: [
       {
@@ -229,7 +229,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   heart: {
-    flash: { radius: 90, life: 250 },
+    shock: { radius: 90, life: 250 },
     centered: true,
     layers: [
       {
@@ -258,7 +258,7 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   spiral: {
-    flash: { radius: 86, life: 240 },
+    shock: { radius: 86, life: 240 },
     centered: true,
     layers: [
       {
@@ -275,9 +275,9 @@ const SHELLS: Record<AnimationId, Shell> = {
   },
 
   crackle: {
-    // Clarão pequeno de propósito: o espetáculo não é a explosão, é o chiado
+    // Onda curta de propósito: o espetáculo não é a explosão, é o chiado
     // que vem depois dela.
-    flash: { radius: 70, life: 170 },
+    shock: { radius: 70, life: 170 },
     layers: [
       {
         count: 28,
@@ -364,7 +364,8 @@ type Rocket = {
   animation: AnimationId;
 };
 
-type Flash = {
+/** Anel que corre à frente das estrelas no instante da explosão. */
+type Shockwave = {
   x: number;
   y: number;
   age: number;
@@ -380,7 +381,7 @@ export class FireworksEngine {
   private readonly context: CanvasRenderingContext2D;
   private particles: Particle[] = [];
   private rockets: Rocket[] = [];
-  private flashes: Flash[] = [];
+  private shockwaves: Shockwave[] = [];
   private queue: LaunchRequest[] = [];
   private width = 0;
   private height = 0;
@@ -432,7 +433,7 @@ export class FireworksEngine {
     this.resizeObserver = null;
     this.particles = [];
     this.rockets = [];
-    this.flashes = [];
+    this.shockwaves = [];
     this.queue = [];
   }
 
@@ -490,10 +491,10 @@ export class FireworksEngine {
       particle.vy *= drag;
     }
 
-    for (let i = this.flashes.length - 1; i >= 0; i -= 1) {
-      const flash = this.flashes[i];
-      flash.age += dt;
-      if (flash.age >= flash.life) this.flashes.splice(i, 1);
+    for (let i = this.shockwaves.length - 1; i >= 0; i -= 1) {
+      const wave = this.shockwaves[i];
+      wave.age += dt;
+      if (wave.age >= wave.life) this.shockwaves.splice(i, 1);
     }
   }
 
@@ -508,24 +509,15 @@ export class FireworksEngine {
     ctx.globalCompositeOperation = "lighter";
     ctx.lineCap = "round";
 
-    for (const flash of this.flashes) {
-      const progress = flash.age / flash.life;
+    for (const wave of this.shockwaves) {
+      const progress = wave.age / wave.life;
       const remaining = 1 - progress;
 
-      const glowRadius = flash.radius * (0.55 + progress * 0.85);
-      const gradient = ctx.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, glowRadius);
-      gradient.addColorStop(0, `hsla(${flash.hue}, 100%, 86%, ${0.5 * remaining})`);
-      gradient.addColorStop(1, `hsla(${flash.hue}, 100%, 60%, 0)`);
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(flash.x, flash.y, glowRadius, 0, TAU);
-      ctx.fill();
-
-      // Onda de choque: o anel fino que corre à frente das estrelas e some.
-      ctx.strokeStyle = `hsla(${flash.hue}, 72%, 90%, ${0.42 * remaining * remaining})`;
+      // O anel fino que corre à frente das estrelas e some.
+      ctx.strokeStyle = `hsla(${wave.hue}, 72%, 90%, ${0.42 * remaining * remaining})`;
       ctx.lineWidth = 2.6 * remaining;
       ctx.beginPath();
-      ctx.arc(flash.x, flash.y, flash.radius * (0.25 + progress * 1.9), 0, TAU);
+      ctx.arc(wave.x, wave.y, wave.radius * (0.25 + progress * 1.9), 0, TAU);
       ctx.stroke();
     }
 
@@ -625,13 +617,13 @@ export class FireworksEngine {
 
   private explode(rocket: Rocket): void {
     const shell = SHELLS[rocket.animation];
-    this.flashes.push({
+    this.shockwaves.push({
       x: rocket.x,
       y: rocket.y,
       age: 0,
-      life: shell.flash.life,
+      life: shell.shock.life,
       hue: rocket.hue,
-      radius: shell.flash.radius,
+      radius: shell.shock.radius,
     });
     for (const layer of shell.layers) this.emitLayer(layer, rocket);
   }
@@ -763,7 +755,7 @@ function makeParticle(seed: ParticleSeed): Particle {
     // 2 está fora do intervalo de progresso (0..1), então nunca cintila.
     twinkleFrom: seed.twinkleFrom ?? 2,
     // Cada partícula pisca no seu próprio ritmo e fase: em uníssono o efeito
-    // vira um flash da tela inteira.
+    // vira um piscar da tela inteira.
     twinkleRate: 0.024 + Math.random() * 0.03,
     twinklePhase: Math.random() * TAU,
     splitAt: seed.splitAt ?? Infinity,
