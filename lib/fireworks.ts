@@ -34,9 +34,24 @@ export const ANIMATIONS = [
     hint: "Um círculo perfeito no céu",
   },
   {
+    id: "star",
+    label: "Estrela",
+    hint: "Cinco pontas desenhadas no ar",
+  },
+  {
+    id: "heart",
+    label: "Coração",
+    hint: "Abre inteiro e desce devagar",
+  },
+  {
+    id: "spiral",
+    label: "Espiral",
+    hint: "Três braços girando para fora",
+  },
+  {
     id: "crackle",
     label: "Estalo",
-    hint: "Mil faíscas que piscam",
+    hint: "Abre discreto e depois chia",
   },
 ] as const;
 

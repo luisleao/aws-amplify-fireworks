@@ -1,14 +1,330 @@
 import { COLOR_BY_ID, type AnimationId, type ColorId } from "./fireworks";
+import { HEART_OUTLINE, SPIRAL_OUTLINE, STAR_OUTLINE, type Vec2 } from "./shapes";
 
 /**
  * Motor de fogos em canvas 2D.
  *
- * Um pedido vira um rojão que sobe, e no ápice explode num arranjo de
- * partículas definido pela animação escolhida. O rastro não é desenhado
- * partícula a partícula: a cada quadro o canvas inteiro perde um pouco de alfa
- * (`destination-out`), o que deixa o que foi desenhado antes esmaecendo sozinho
- * e mantém o custo por quadro constante.
+ * Um pedido vira um rojão que sobe soltando faíscas e, no ápice, explode
+ * segundo a receita declarativa da animação escolhida (`SHELLS`). O rastro não
+ * é desenhado partícula a partícula: a cada quadro o canvas inteiro perde um
+ * pouco de alfa (`destination-out`), então o que foi desenhado antes esmaece
+ * sozinho e o custo por quadro não depende do tamanho do rastro.
  */
+
+const TAU = Math.PI * 2;
+/** Referência de quadro: toda velocidade está em px por quadro de 60fps. */
+const FRAME_MS = 1000 / 60;
+const ROCKET_GRAVITY = 0.25;
+const TRAIL_FADE = 0.16;
+const MAX_PARTICLES = 6000;
+const MAX_ROCKETS = 12;
+/** Espaçamento mínimo entre lançamentos, para uma rajada virar sequência. */
+const LAUNCH_INTERVAL_MS = 110;
+/** Para onde a brasa caminha: laranja fosco, como pólvora queimando. */
+const EMBER_HUE = 26;
+const EMBER_SATURATION = 58;
+
+type Range = readonly [number, number];
+
+/** Como a direção de cada partícula da camada é escolhida. */
+type Direction =
+  | { kind: "sphere" }
+  | { kind: "ring"; tilt: Range }
+  | { kind: "fronds"; fronds: number; jitter: number }
+  | { kind: "shape"; points: readonly Vec2[] };
+
+/**
+ * Ignição secundária: a partícula se parte em faíscas depois de um tempo de
+ * voo. É o que diferencia um estalo de uma esfera qualquer — o brilho que
+ * importa não nasce na explosão, nasce depois dela.
+ */
+type Split = {
+  at: Range;
+  count: number;
+  speed: Range;
+  life: Range;
+  size: number;
+  saturation: number;
+  lightness: number;
+  twinkleFrom: number;
+};
+
+type Layer = {
+  count: number;
+  direction: Direction;
+  speed: Range;
+  /** `area` preenche o volume; `edge` mantém as partículas na casca. */
+  fill?: "area" | "edge";
+  life: Range;
+  size: number;
+  gravity: number;
+  drag: number;
+  saturation?: number;
+  lightness?: number;
+  /** Multiplica a variação de matiz da cor escolhida. */
+  hueSpread?: number;
+  /** Fração da vida em que a cintilação chega ao máximo. Ausente = sem cintilar. */
+  twinkleFrom?: number;
+  /** Esfria para brasa alaranjada ao longo da vida. */
+  ember?: boolean;
+  split?: Split;
+};
+
+type Shell = {
+  flash: { radius: number; life: number };
+  /** Mira mais ao centro e mais alto — figuras precisam caber inteiras na tela. */
+  centered?: boolean;
+  layers: readonly Layer[];
+};
+
+const SPHERE: Direction = { kind: "sphere" };
+
+/**
+ * As receitas. Ajustar um fogo é mexer em números aqui, não em código de
+ * desenho — e é por isso que as camadas existem: quase todo fogo bonito é uma
+ * casca externa somada a um núcleo mais lento e mais claro, que dá volume.
+ */
+const SHELLS: Record<AnimationId, Shell> = {
+  peony: {
+    flash: { radius: 96, life: 260 },
+    layers: [
+      {
+        count: 112,
+        direction: SPHERE,
+        fill: "area",
+        speed: [1.8, 5.4],
+        life: [1150, 1680],
+        size: 2.5,
+        gravity: 0.055,
+        drag: 0.962,
+        twinkleFrom: 0.74,
+      },
+      {
+        count: 34,
+        direction: SPHERE,
+        fill: "area",
+        speed: [0.4, 1.9],
+        life: [850, 1250],
+        size: 3.1,
+        lightness: 76,
+        gravity: 0.05,
+        drag: 0.955,
+      },
+    ],
+  },
+
+  chrysanthemum: {
+    flash: { radius: 88, life: 240 },
+    layers: [
+      {
+        count: 132,
+        direction: SPHERE,
+        // Casca oca: o crisântemo é um anel de estrelas, não uma bola cheia.
+        fill: "edge",
+        speed: [2.6, 5.5],
+        life: [1800, 2450],
+        size: 2.2,
+        gravity: 0.05,
+        drag: 0.984,
+        ember: true,
+        twinkleFrom: 0.8,
+      },
+    ],
+  },
+
+  willow: {
+    flash: { radius: 80, life: 290 },
+    layers: [
+      {
+        count: 92,
+        direction: SPHERE,
+        fill: "edge",
+        speed: [1.3, 2.7],
+        life: [2600, 3500],
+        size: 2.0,
+        lightness: 68,
+        // Arrasto alto trava o avanço horizontal cedo; a gravidade faz o resto,
+        // e o resultado é a cortina caindo reta.
+        gravity: 0.092,
+        drag: 0.99,
+        ember: true,
+        twinkleFrom: 0.84,
+      },
+    ],
+  },
+
+  palm: {
+    flash: { radius: 104, life: 270 },
+    layers: [
+      {
+        count: 144,
+        direction: { kind: "fronds", fronds: 8, jitter: 0.1 },
+        speed: [1.2, 4.9],
+        life: [1550, 2150],
+        size: 3.2,
+        gravity: 0.085,
+        drag: 0.982,
+        ember: true,
+      },
+      {
+        count: 28,
+        direction: SPHERE,
+        fill: "area",
+        speed: [0.3, 1.5],
+        life: [700, 1000],
+        size: 2.4,
+        lightness: 82,
+        gravity: 0.05,
+        drag: 0.95,
+      },
+    ],
+  },
+
+  ring: {
+    flash: { radius: 78, life: 220 },
+    layers: [
+      {
+        count: 104,
+        // Achatamento no eixo Y sugere um anel visto de viés.
+        direction: { kind: "ring", tilt: [0.34, 0.88] },
+        speed: [3.95, 4.15],
+        life: [1400, 1700],
+        size: 2.6,
+        gravity: 0.045,
+        drag: 0.979,
+        twinkleFrom: 0.76,
+      },
+    ],
+  },
+
+  star: {
+    flash: { radius: 92, life: 250 },
+    centered: true,
+    layers: [
+      {
+        count: 132,
+        direction: { kind: "shape", points: STAR_OUTLINE },
+        // Faixa de velocidade estreita: qualquer dispersão borra a figura.
+        speed: [4.6, 4.9],
+        life: [1550, 1900],
+        size: 2.6,
+        // Gravidade baixa e arrasto alto: expande, trava e segura a forma.
+        gravity: 0.022,
+        drag: 0.987,
+        hueSpread: 0.5,
+        twinkleFrom: 0.72,
+      },
+      {
+        count: 36,
+        direction: SPHERE,
+        fill: "area",
+        speed: [0.3, 1.2],
+        life: [800, 1150],
+        size: 2.2,
+        lightness: 82,
+        gravity: 0.03,
+        drag: 0.95,
+      },
+    ],
+  },
+
+  heart: {
+    flash: { radius: 90, life: 250 },
+    centered: true,
+    layers: [
+      {
+        count: 140,
+        direction: { kind: "shape", points: HEART_OUTLINE },
+        speed: [4.4, 4.7],
+        life: [1650, 2050],
+        size: 2.7,
+        gravity: 0.02,
+        drag: 0.988,
+        hueSpread: 0.5,
+        twinkleFrom: 0.74,
+      },
+      {
+        count: 30,
+        direction: SPHERE,
+        fill: "area",
+        speed: [0.25, 1.0],
+        life: [850, 1200],
+        size: 2.2,
+        lightness: 82,
+        gravity: 0.03,
+        drag: 0.95,
+      },
+    ],
+  },
+
+  spiral: {
+    flash: { radius: 86, life: 240 },
+    centered: true,
+    layers: [
+      {
+        count: 150,
+        direction: { kind: "shape", points: SPIRAL_OUTLINE },
+        speed: [4.4, 4.9],
+        life: [1450, 1850],
+        size: 2.3,
+        gravity: 0.03,
+        drag: 0.984,
+        twinkleFrom: 0.72,
+      },
+    ],
+  },
+
+  crackle: {
+    // Clarão pequeno de propósito: o espetáculo não é a explosão, é o chiado
+    // que vem depois dela.
+    flash: { radius: 70, life: 170 },
+    layers: [
+      {
+        count: 28,
+        direction: SPHERE,
+        fill: "area",
+        speed: [1.0, 3.2],
+        life: [380, 580],
+        size: 2.1,
+        lightness: 72,
+        gravity: 0.03,
+        drag: 0.96,
+        split: {
+          at: [190, 380],
+          count: 9,
+          speed: [0.6, 2.6],
+          life: [430, 780],
+          size: 1.3,
+          // Faíscas quase prateadas, com só um resto da cor escolhida.
+          saturation: 38,
+          lightness: 92,
+          twinkleFrom: 0,
+        },
+      },
+      {
+        count: 32,
+        direction: SPHERE,
+        fill: "edge",
+        speed: [3.0, 6.0],
+        life: [450, 700],
+        size: 1.9,
+        lightness: 70,
+        gravity: 0.035,
+        drag: 0.965,
+        split: {
+          at: [270, 520],
+          count: 7,
+          speed: [0.5, 2.4],
+          life: [380, 720],
+          size: 1.2,
+          saturation: 38,
+          lightness: 92,
+          twinkleFrom: 0,
+        },
+      },
+    ],
+  },
+};
 
 type Particle = {
   x: number;
@@ -20,11 +336,19 @@ type Particle = {
   age: number;
   life: number;
   hue: number;
-  light: number;
+  saturation: number;
+  lightness: number;
   size: number;
   gravity: number;
   drag: number;
-  flicker: boolean;
+  ember: boolean;
+  /** Fração da vida em que a cintilação chega ao máximo; >= 2 nunca cintila. */
+  twinkleFrom: number;
+  twinkleRate: number;
+  twinklePhase: number;
+  /** Idade em ms na qual a partícula se parte; Infinity = não se parte. */
+  splitAt: number;
+  split: Split | null;
 };
 
 type Rocket = {
@@ -50,15 +374,6 @@ type Flash = {
 };
 
 export type LaunchRequest = { animation: AnimationId; color: ColorId };
-
-/** Referência de quadro: toda velocidade está em px por quadro de 60fps. */
-const FRAME_MS = 1000 / 60;
-const ROCKET_GRAVITY = 0.25;
-const TRAIL_FADE = 0.16;
-const MAX_PARTICLES = 5000;
-const MAX_ROCKETS = 14;
-/** Espaçamento mínimo entre lançamentos, para uma rajada virar sequência. */
-const LAUNCH_INTERVAL_MS = 110;
 
 export class FireworksEngine {
   private readonly canvas: HTMLCanvasElement;
@@ -146,6 +461,7 @@ export class FireworksEngine {
       rocket.x += rocket.vx * step;
       rocket.y += rocket.vy * step;
       rocket.vy += ROCKET_GRAVITY * step;
+      this.shedRocketSpark(rocket, step);
 
       if (rocket.vy >= -1.2 || rocket.y <= rocket.targetY) {
         this.explode(rocket);
@@ -159,6 +475,10 @@ export class FireworksEngine {
       if (particle.age >= particle.life) {
         this.particles.splice(i, 1);
         continue;
+      }
+      if (particle.age >= particle.splitAt) {
+        this.splitParticle(particle);
+        particle.splitAt = Infinity;
       }
       particle.px = particle.x;
       particle.py = particle.y;
@@ -189,20 +509,29 @@ export class FireworksEngine {
     ctx.lineCap = "round";
 
     for (const flash of this.flashes) {
-      const remaining = 1 - flash.age / flash.life;
-      const radius = flash.radius * (1.4 - remaining * 0.4);
-      const gradient = ctx.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, radius);
-      gradient.addColorStop(0, `hsla(${flash.hue}, 100%, 82%, ${0.42 * remaining})`);
+      const progress = flash.age / flash.life;
+      const remaining = 1 - progress;
+
+      const glowRadius = flash.radius * (0.55 + progress * 0.85);
+      const gradient = ctx.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, glowRadius);
+      gradient.addColorStop(0, `hsla(${flash.hue}, 100%, 86%, ${0.5 * remaining})`);
       gradient.addColorStop(1, `hsla(${flash.hue}, 100%, 60%, 0)`);
       ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(flash.x, flash.y, radius, 0, Math.PI * 2);
+      ctx.arc(flash.x, flash.y, glowRadius, 0, TAU);
       ctx.fill();
+
+      // Onda de choque: o anel fino que corre à frente das estrelas e some.
+      ctx.strokeStyle = `hsla(${flash.hue}, 72%, 90%, ${0.42 * remaining * remaining})`;
+      ctx.lineWidth = 2.6 * remaining;
+      ctx.beginPath();
+      ctx.arc(flash.x, flash.y, flash.radius * (0.25 + progress * 1.9), 0, TAU);
+      ctx.stroke();
     }
 
     for (const rocket of this.rockets) {
-      ctx.strokeStyle = `hsla(${rocket.hue}, 90%, 78%, 0.9)`;
-      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = `hsla(${rocket.hue}, 90%, 80%, 0.92)`;
+      ctx.lineWidth = 2.6;
       ctx.beginPath();
       ctx.moveTo(rocket.px, rocket.py);
       ctx.lineTo(rocket.x, rocket.y);
@@ -210,17 +539,33 @@ export class FireworksEngine {
     }
 
     for (const particle of this.particles) {
-      const remaining = 1 - particle.age / particle.life;
+      const progress = particle.age / particle.life;
       // Queda cúbica: a partícula brilha quase toda a vida e some de vez no fim.
+      const remaining = 1 - progress;
       let alpha = remaining * remaining * remaining;
-      if (particle.flicker) alpha *= 0.35 + Math.random() * 0.65;
-      if (alpha <= 0.01) continue;
+
+      if (particle.twinkleFrom < 2) {
+        // A cintilação entra ao longo de 25% da vida antes do ponto marcado,
+        // então `twinkleFrom: 0` já nasce estalando.
+        const ramp = clamp01((progress - particle.twinkleFrom + 0.25) / 0.25);
+        const strobe = 0.5 + 0.5 * Math.sin(particle.age * particle.twinkleRate + particle.twinklePhase);
+        alpha *= 1 - ramp * 0.9 * (1 - strobe);
+      }
+      if (alpha <= 0.012) continue;
+
+      let hue = particle.hue;
+      let saturation = particle.saturation;
+      if (particle.ember) {
+        const cooled = progress * 0.85;
+        hue += shortestHueDelta(particle.hue, EMBER_HUE) * cooled;
+        saturation += (EMBER_SATURATION - saturation) * cooled;
+      }
 
       // O núcleo nasce branco e assume a cor conforme esfria.
-      const youth = Math.max(0, 1 - particle.age / 260);
-      const light = particle.light + youth * (96 - particle.light);
+      const youth = Math.max(0, 1 - particle.age / 240);
+      const lightness = particle.lightness + youth * (97 - particle.lightness);
 
-      ctx.strokeStyle = `hsla(${particle.hue}, 100%, ${light}%, ${alpha})`;
+      ctx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
       ctx.lineWidth = particle.size * (0.45 + remaining * 0.55);
       ctx.beginPath();
       ctx.moveTo(particle.px, particle.py);
@@ -233,9 +578,11 @@ export class FireworksEngine {
 
   private spawnRocket(request: LaunchRequest): void {
     const color = COLOR_BY_ID[request.color];
-    const x = this.width * (0.12 + Math.random() * 0.76);
-    const targetY = this.height * (0.12 + Math.random() * 0.34);
-    const climb = this.height - targetY;
+    const shell = SHELLS[request.animation];
+    // Figuras precisam caber inteiras e não podem estourar rente à borda.
+    const horizontalSpread = shell.centered ? 0.36 : 0.76;
+    const x = this.width * ((1 - horizontalSpread) / 2 + Math.random() * horizontalSpread);
+    const targetY = this.height * (shell.centered ? 0.16 + Math.random() * 0.16 : 0.12 + Math.random() * 0.34);
 
     this.rockets.push({
       x,
@@ -244,7 +591,7 @@ export class FireworksEngine {
       py: this.height + 8,
       vx: (Math.random() - 0.5) * 1.2,
       // Velocidade exata para a subida morrer na altura escolhida.
-      vy: -Math.sqrt(2 * ROCKET_GRAVITY * climb),
+      vy: -Math.sqrt(2 * ROCKET_GRAVITY * (this.height - targetY)),
       targetY,
       hue: color.hue,
       spread: color.spread,
@@ -252,138 +599,191 @@ export class FireworksEngine {
     });
   }
 
+  /** Faíscas que caem do rojão durante a subida. */
+  private shedRocketSpark(rocket: Rocket, step: number): void {
+    if (this.particles.length >= MAX_PARTICLES) return;
+    if (Math.random() > 0.55 * step) return;
+
+    this.particles.push(
+      makeParticle({
+        x: rocket.x,
+        y: rocket.y,
+        // Sai para trás do rojão, com uma sobra de energia para os lados.
+        vx: -rocket.vx * 0.12 + (Math.random() - 0.5) * 0.55,
+        vy: -rocket.vy * 0.06 + (Math.random() - 0.5) * 0.55,
+        life: 260 + Math.random() * 280,
+        hue: rocket.hue,
+        saturation: 62,
+        lightness: 84,
+        size: 1.5,
+        gravity: 0.02,
+        drag: 0.93,
+        ember: true,
+      }),
+    );
+  }
+
   private explode(rocket: Rocket): void {
-    const { x, y, animation, hue, spread } = rocket;
-    const pick = () => wrapHue(hue + (Math.random() - 0.5) * spread);
+    const shell = SHELLS[rocket.animation];
+    this.flashes.push({
+      x: rocket.x,
+      y: rocket.y,
+      age: 0,
+      life: shell.flash.life,
+      hue: rocket.hue,
+      radius: shell.flash.radius,
+    });
+    for (const layer of shell.layers) this.emitLayer(layer, rocket);
+  }
 
-    this.flashes.push({ x, y, age: 0, life: 260, hue, radius: 90 });
+  private emitLayer(layer: Layer, rocket: Rocket): void {
+    // Orçamento verificado por camada, não por partícula: truncar no meio
+    // deixaria meia estrela ou meio coração no céu.
+    if (this.particles.length + layer.count > MAX_PARTICLES) return;
 
-    const add = (particle: Omit<Particle, "px" | "py" | "age">) => {
-      if (this.particles.length >= MAX_PARTICLES) return;
-      this.particles.push({ ...particle, px: particle.x, py: particle.y, age: 0 });
-    };
+    const rotation = Math.random() * TAU;
+    const tilt = layer.direction.kind === "ring" ? pick(layer.direction.tilt) : 1;
+    const fronds = layer.direction.kind === "fronds" ? layer.direction.fronds : 1;
+    const perFrond = Math.max(1, Math.round(layer.count / fronds));
+    const hueSpread = rocket.spread * (layer.hueSpread ?? 1);
 
-    switch (animation) {
-      case "peony": {
-        for (let i = 0; i < 96; i += 1) {
-          const angle = Math.random() * Math.PI * 2;
-          // Raiz quadrada distribui as partículas por área, não por raio —
-          // sem isso a esfera fica com o centro empapado.
-          const speed = 1.6 + Math.sqrt(Math.random()) * 3.9;
-          add({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 1100 + Math.random() * 500,
-            hue: pick(), light: 62, size: 2.4,
-            gravity: 0.055, drag: 0.964, flicker: false,
-          });
+    for (let i = 0; i < layer.count; i += 1) {
+      let dx: number;
+      let dy: number;
+      let speed: number;
+
+      switch (layer.direction.kind) {
+        case "ring": {
+          const angle = rotation + (i / layer.count) * TAU;
+          dx = Math.cos(angle);
+          dy = Math.sin(angle) * tilt;
+          speed = pick(layer.speed);
+          break;
         }
-        break;
+        case "fronds": {
+          const frond = Math.floor(i / perFrond);
+          const along = (i % perFrond) / perFrond;
+          const angle = rotation + (frond / fronds) * TAU + (Math.random() - 0.5) * layer.direction.jitter;
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          // A velocidade cresce ao longo do jato, o que o desenha como um
+          // traço contínuo em vez de um punhado de pontos soltos.
+          speed = layer.speed[0] + (layer.speed[1] - layer.speed[0]) * along;
+          break;
+        }
+        case "shape": {
+          // O ponto já carrega a figura; a escala única preserva a proporção.
+          const point = layer.direction.points[i % layer.direction.points.length];
+          const jitter = 1 + (Math.random() - 0.5) * 0.06;
+          dx = point.x * jitter;
+          dy = point.y * jitter;
+          speed = pick(layer.speed);
+          break;
+        }
+        default: {
+          const angle = Math.random() * TAU;
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          // Raiz quadrada distribui por área, não por raio — sem isso o centro
+          // da esfera fica empapado e a borda vazia.
+          speed =
+            layer.fill === "edge"
+              ? pick(layer.speed)
+              : layer.speed[0] + (layer.speed[1] - layer.speed[0]) * Math.sqrt(Math.random());
+          break;
+        }
       }
-      case "chrysanthemum": {
-        for (let i = 0; i < 118; i += 1) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = 2.2 + Math.sqrt(Math.random()) * 3.8;
-          add({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 1700 + Math.random() * 600,
-            hue: pick(), light: 64, size: 2.1,
-            // Pouco arrasto é o que estica o rastro característico.
-            gravity: 0.05, drag: 0.982, flicker: false,
-          });
-        }
-        break;
-      }
-      case "willow": {
-        for (let i = 0; i < 78; i += 1) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = 1.1 + Math.sqrt(Math.random()) * 2.3;
-          add({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 2500 + Math.random() * 900,
-            hue: pick(), light: 66, size: 1.9,
-            // Gravidade alta com arrasto alto: sobe pouco e desce em cortina.
-            gravity: 0.088, drag: 0.988, flicker: false,
-          });
-        }
-        break;
-      }
-      case "palm": {
-        const fronds = 9;
-        const rotation = Math.random() * Math.PI * 2;
-        for (let f = 0; f < fronds; f += 1) {
-          const angle = rotation + (f / fronds) * Math.PI * 2;
-          const frondHue = pick();
-          for (let i = 0; i < 16; i += 1) {
-            const speed = 1.3 + (i / 16) * 4.4;
-            const wobble = (Math.random() - 0.5) * 0.09;
-            add({
-              x, y,
-              vx: Math.cos(angle + wobble) * speed,
-              vy: Math.sin(angle + wobble) * speed,
-              life: 1500 + Math.random() * 700,
-              hue: frondHue, light: 66, size: 3.1,
-              gravity: 0.082, drag: 0.981, flicker: false,
-            });
-          }
-        }
-        break;
-      }
-      case "ring": {
-        const count = 92;
-        const rotation = Math.random() * Math.PI * 2;
-        // Achatamento no eixo Y sugere um anel visto de viés.
-        const tilt = 0.45 + Math.random() * 0.4;
-        for (let i = 0; i < count; i += 1) {
-          const angle = rotation + (i / count) * Math.PI * 2;
-          const speed = 3.9 + (Math.random() - 0.5) * 0.45;
-          add({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed * tilt,
-            life: 1300 + Math.random() * 400,
-            hue: pick(), light: 66, size: 2.5,
-            gravity: 0.046, drag: 0.976, flicker: false,
-          });
-        }
-        break;
-      }
-      case "crackle": {
-        for (let i = 0; i < 56; i += 1) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = 1.4 + Math.sqrt(Math.random()) * 3.2;
-          add({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 800 + Math.random() * 400,
-            hue: pick(), light: 68, size: 2.2,
-            gravity: 0.06, drag: 0.95, flicker: false,
-          });
-        }
-        for (let i = 0; i < 170; i += 1) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = 0.8 + Math.sqrt(Math.random()) * 4.6;
-          add({
-            x, y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 600 + Math.random() * 700,
-            hue: pick(), light: 86, size: 1.2,
-            gravity: 0.038, drag: 0.94, flicker: true,
-          });
-        }
-        break;
-      }
+
+      this.particles.push(
+        makeParticle({
+          x: rocket.x,
+          y: rocket.y,
+          vx: dx * speed,
+          vy: dy * speed,
+          life: pick(layer.life),
+          hue: wrapHue(rocket.hue + (Math.random() - 0.5) * hueSpread),
+          saturation: layer.saturation ?? 100,
+          lightness: layer.lightness ?? 64,
+          size: layer.size,
+          gravity: layer.gravity,
+          drag: layer.drag,
+          ember: layer.ember ?? false,
+          twinkleFrom: layer.twinkleFrom,
+          splitAt: layer.split ? pick(layer.split.at) : Infinity,
+          split: layer.split ?? null,
+        }),
+      );
+    }
+  }
+
+  /** Ignição secundária: a partícula vira um punhado de faíscas. */
+  private splitParticle(parent: Particle): void {
+    const split = parent.split;
+    if (!split) return;
+    if (this.particles.length + split.count > MAX_PARTICLES) return;
+
+    for (let i = 0; i < split.count; i += 1) {
+      const angle = Math.random() * TAU;
+      const speed = pick(split.speed);
+      this.particles.push(
+        makeParticle({
+          x: parent.x,
+          y: parent.y,
+          // Herda parte do impulso do pai, senão as faíscas nascem paradas
+          // e o estalo parece um borrifo em vez de uma dispersão.
+          vx: parent.vx * 0.35 + Math.cos(angle) * speed,
+          vy: parent.vy * 0.35 + Math.sin(angle) * speed,
+          life: pick(split.life),
+          hue: parent.hue,
+          saturation: split.saturation,
+          lightness: split.lightness,
+          size: split.size,
+          gravity: 0.03,
+          drag: 0.9,
+          twinkleFrom: split.twinkleFrom,
+        }),
+      );
     }
   }
 }
 
+type ParticleSeed = Omit<
+  Particle,
+  "px" | "py" | "age" | "ember" | "twinkleFrom" | "twinkleRate" | "twinklePhase" | "splitAt" | "split"
+> &
+  Partial<Pick<Particle, "ember" | "splitAt" | "split">> & { twinkleFrom?: number };
+
+function makeParticle(seed: ParticleSeed): Particle {
+  return {
+    ...seed,
+    px: seed.x,
+    py: seed.y,
+    age: 0,
+    ember: seed.ember ?? false,
+    // 2 está fora do intervalo de progresso (0..1), então nunca cintila.
+    twinkleFrom: seed.twinkleFrom ?? 2,
+    // Cada partícula pisca no seu próprio ritmo e fase: em uníssono o efeito
+    // vira um flash da tela inteira.
+    twinkleRate: 0.024 + Math.random() * 0.03,
+    twinklePhase: Math.random() * TAU,
+    splitAt: seed.splitAt ?? Infinity,
+    split: seed.split ?? null,
+  };
+}
+
+function pick(range: Range): number {
+  return range[0] + Math.random() * (range[1] - range[0]);
+}
+
+function clamp01(value: number): number {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
 function wrapHue(value: number): number {
   return ((value % 360) + 360) % 360;
+}
+
+/** Caminho mais curto entre dois matizes na roda de cores, em graus. */
+function shortestHueDelta(from: number, to: number): number {
+  return ((((to - from) % 360) + 540) % 360) - 180;
 }

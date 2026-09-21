@@ -147,10 +147,11 @@ app/
   api/stream/route.ts       SSE do modo local
   api/health/route.ts       qual transporte está ativo
 components/
-  FireworkGlyph.tsx         ícone SVG de cada formato
+  FireworkGlyph.tsx         ícone SVG de cada formato, tirado do mesmo contorno
 lib/
   fireworks.ts              catálogo + validação (compartilhado cliente/servidor)
-  engine.ts                 motor de partículas em canvas
+  engine.ts                 motor de partículas + receita de cada explosão
+  shapes.ts                 contornos paramétricos (estrela, coração, espiral)
   event-client.ts           assinatura no navegador (WebSocket ou SSE)
   appsync.ts                publish assinado com SigV4
   local-bus.ts              barramento em memória do modo local
@@ -158,6 +159,40 @@ lib/
 infra/                      CDK: Event API, namespace, chave, roles
 amplify.yml                 buildspec do Amplify Hosting
 ```
+
+## Os fogos
+
+Nove formatos, todos definidos como receitas declarativas em `SHELLS`
+(`lib/engine.ts`). Ajustar um fogo é mexer em números — contagem, velocidade,
+vida, gravidade, arrasto — e não em código de desenho.
+
+| Formato | O que faz |
+| --- | --- |
+| Peônia | Esfera cheia com núcleo lento e mais claro, que dá volume |
+| Crisântemo | Casca oca com arrasto baixo: rastros longos que esfriam para brasa |
+| Salgueiro | Gravidade alta e arrasto alto — a cortina cai quase reta e sai da tela |
+| Palmeira | Oito jatos grossos com velocidade crescente ao longo do traço |
+| Anel | Círculo achatado no eixo Y, como um anel visto de viés |
+| Estrela | Contorno de cinco pontas, expandido em escala única |
+| Coração | Curva paramétrica clássica, ponta para baixo |
+| Espiral | Três braços onde o raio cresce junto com o ângulo |
+| Estalo | Abre discreto e, 200–500ms depois, cada estrela se parte em faíscas |
+
+Três mecanismos sustentam isso:
+
+- **Camadas.** Quase todo fogo bonito é uma casca externa somada a um núcleo
+  mais lento e mais claro. Cada camada tem física própria.
+- **Ignição secundária.** Uma partícula pode se partir em faíscas depois de um
+  tempo de voo. É o que faz o estalo ser um estalo: o brilho que importa não
+  nasce na explosão, nasce depois dela.
+- **Figuras.** Estrela, coração e espiral vêm de contornos em `lib/shapes.ts`,
+  reamostrados por perímetro para as partículas não se acumularem nos vértices.
+  O ponto do contorno *é* o vetor de velocidade, multiplicado por uma escala
+  única — por isso a figura expande sem se deformar. Gravidade baixa e arrasto
+  alto seguram a forma legível por pouco mais de um segundo.
+
+Os ícones do seletor desenham os mesmos contornos que o motor usa, então o
+botão mostra literalmente o que vai aparecer no céu.
 
 ## Atalhos do telão
 

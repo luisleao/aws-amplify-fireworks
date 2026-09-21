@@ -1,9 +1,13 @@
 import type { AnimationId } from "@/lib/fireworks";
+import { HEART_OUTLINE, SPIRAL_OUTLINE, STAR_OUTLINE, sampleOutline, type Vec2 } from "@/lib/shapes";
 
 /**
  * Ícone que desenha o formato de cada animação.
  *
- * Tudo é derivado de um gerador pseudoaleatório com semente fixa: o mesmo
+ * Os fogos com figura usam o mesmo contorno que o motor usa para explodir, de
+ * modo que o botão mostra literalmente o que vai aparecer no céu.
+ *
+ * O resto é derivado de um gerador pseudoaleatório com semente fixa: o mesmo
  * desenho sai no servidor e no cliente, sem risco de divergência na hidratação.
  */
 
@@ -31,6 +35,13 @@ function rays(count: number, inner: number, outer: number, rotation = 0) {
     const [x2, y2] = polar(angle, outer);
     return { key: i, x1, y1, x2, y2 };
   });
+}
+
+/** Desenha um contorno do motor como nuvem de pontos dentro do ícone. */
+function outlineDots(outline: readonly Vec2[], count: number, radius: number) {
+  return sampleOutline(outline, count).map((point, i) => (
+    <circle key={i} cx={CENTER + point.x * 19} cy={CENTER + point.y * 19} r={radius} fill="currentColor" stroke="none" />
+  ));
 }
 
 export function FireworkGlyph({ animation }: { animation: AnimationId }) {
@@ -68,12 +79,18 @@ export function FireworkGlyph({ animation }: { animation: AnimationId }) {
 
     case "willow":
       return (
-        <svg {...common} strokeWidth={1.8}>
+        <svg {...common} strokeWidth={1.7}>
           {Array.from({ length: 7 }, (_, i) => {
-            // Sai do centro para cima e para os lados, depois tomba.
-            const angle = Math.PI + (i / 6) * Math.PI;
-            const [tipX, tipY] = polar(angle, 15);
-            return <path key={i} d={`M${CENTER} ${CENTER - 2} Q ${tipX} ${tipY} ${tipX} ${tipY + 16}`} />;
+            // Todas as hastes saem do mesmo ponto de explosão, abrem na
+            // horizontal e tombam: é a silhueta de cúpula do salgueiro.
+            const offset = (i / 6 - 0.5) * 36;
+            const fall = 42 - Math.abs(offset) * 0.32;
+            return (
+              <path
+                key={i}
+                d={`M${CENTER} 12 C ${CENTER + offset * 0.55} 12, ${CENTER + offset} 19, ${CENTER + offset} ${fall}`}
+              />
+            );
           })}
         </svg>
       );
@@ -98,6 +115,15 @@ export function FireworkGlyph({ animation }: { animation: AnimationId }) {
           ))}
         </svg>
       );
+
+    case "star":
+      return <svg {...common}>{outlineDots(STAR_OUTLINE, 26, 1.5)}</svg>;
+
+    case "heart":
+      return <svg {...common}>{outlineDots(HEART_OUTLINE, 36, 1.35)}</svg>;
+
+    case "spiral":
+      return <svg {...common}>{outlineDots(SPIRAL_OUTLINE, 30, 1.4)}</svg>;
 
     case "crackle": {
       const random = seeded(7);
