@@ -9,6 +9,10 @@ frontend:
         - npm ci
     build:
       commands:
+        # O Amplify expõe as variáveis do app no build, mas não no runtime do
+        # compute SSR. Gravar .env.production faz o servidor do Next carregá-las
+        # quando a função sobe.
+        - env | grep -E '^(EVENTS_|NEXT_PUBLIC_EVENTS_)' >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next
