@@ -21,13 +21,22 @@ const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 15_000;
 const SEEN_LIMIT = 500;
 
+/**
+ * Ids já entregues nesta página, compartilhados por todas as assinaturas.
+ *
+ * Fica no módulo, e não na chamada, porque pode haver mais de um transporte
+ * vivo ao mesmo tempo — durante uma reconexão, ou quando o Fast Refresh
+ * remonta o efeito antes de a conexão anterior morrer. Com um conjunto por
+ * assinatura, um evento que chegasse pelos dois estouraria dois fogos.
+ */
+const seen = new Set<string>();
+
 export function subscribeToFireworks({ onEvent, onStatus }: SubscribeHandlers): () => void {
   let stopped = false;
   let attempt = 0;
   let disconnect: (() => void) | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const seen = new Set<string>();
   const deliver = (event: FireworkEvent) => {
     if (seen.has(event.id)) return;
     seen.add(event.id);

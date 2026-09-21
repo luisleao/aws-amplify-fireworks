@@ -54,6 +54,7 @@
 
 .counter {
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   font-size: clamp(14px, 1.4vw, 20px);
   color: rgba(255, 255, 255, 0.62);
 }
@@ -62,6 +63,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
