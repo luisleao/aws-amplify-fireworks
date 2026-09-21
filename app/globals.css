@@ -1,0 +1,81 @@
+/*
+ * O app inteiro vive numa noite: não há tema claro, e o fundo é sempre o mesmo
+ * céu. Os tokens abaixo são a única fonte de cor da interface — as cores dos
+ * fogos vêm do catálogo em lib/fireworks.ts.
+ */
+:root {
+  color-scheme: dark;
+
+  --sky-top: #070a1a;
+  --sky-bottom: #12091f;
+  --ink: #f2f4ff;
+  --ink-muted: #9aa3c7;
+  --ink-faint: #5d6690;
+
+  --surface: rgba(255, 255, 255, 0.045);
+  --surface-strong: rgba(255, 255, 255, 0.09);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.28);
+
+  --accent: #ffc23b;
+  --danger: #ff6b7a;
+  --live: #47f06b;
+
+  --radius: 16px;
+  --radius-lg: 22px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  color: var(--ink);
+  background-color: var(--sky-bottom);
+  /* Duas nebulosas discretas sobre o gradiente do céu. */
+  background-image:
+    radial-gradient(1100px 620px at 78% -6%, rgba(88, 60, 180, 0.32), transparent 62%),
+    radial-gradient(900px 560px at 12% 4%, rgba(20, 90, 160, 0.26), transparent 58%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bottom) 100%);
+  background-attachment: fixed;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Evita o zoom por toque duplo e o realce azul no mobile. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

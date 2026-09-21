@@ -1,0 +1,249 @@
+.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 32px 20px 0;
+  /* Espaço para a barra de disparo, que é fixa no rodapé. */
+  padding-bottom: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title {
+  font-size: clamp(28px, 8vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.legend {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Formato ---------- */
+
+.animationGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (min-width: 480px) {
+  .animationGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.animationOption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px 14px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
+}
+
+.animationOption:active {
+  transform: scale(0.97);
+}
+
+.animationOption:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 8px 30px -12px var(--accent);
+}
+
+.animationOption:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.glyph {
+  width: 46px;
+  height: 46px;
+  color: var(--ink-muted);
+  transition: color 120ms ease;
+}
+
+.animationOption:has(input:checked) .glyph {
+  color: var(--accent);
+}
+
+.optionLabel {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.optionHint {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ink-faint);
+}
+
+/* ---------- Cor ---------- */
+
+.colorGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.colorOption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 4px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.colorOption:has(input:checked) {
+  background: var(--surface-strong);
+}
+
+.colorOption:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swatch {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  /* Contorno duplo: o anel branco só aparece quando a cor está escolhida. */
+  box-shadow: 0 0 0 1px var(--border) inset;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.colorOption:active .swatch {
+  transform: scale(0.93);
+}
+
+.colorOption:has(input:checked) .swatch {
+  border-color: var(--ink);
+  box-shadow: 0 0 22px -4px currentColor, 0 0 0 1px var(--border-strong) inset;
+  transform: scale(1.06);
+}
+
+.swatchLabel {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.colorOption:has(input:checked) .swatchLabel {
+  color: var(--ink);
+}
+
+/* ---------- Disparo ---------- */
+
+.launchBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 20px calc(18px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(18, 9, 31, 0) 0%, rgba(18, 9, 31, 0.92) 38%, var(--sky-bottom) 100%);
+}
+
+.status {
+  min-height: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.statusOk {
+  color: var(--live);
+  font-weight: 600;
+}
+
+.statusError {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.launchButton {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 18px 24px;
+  border-radius: var(--radius-lg);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #23160a;
+  background: linear-gradient(180deg, #ffd873 0%, var(--accent) 100%);
+  box-shadow: 0 14px 40px -14px var(--accent);
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.launchButton:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 8px 22px -14px var(--accent);
+}
+
+.launchButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+}
+
+.screenLink {
+  font-size: 13px;
+  color: var(--ink-faint);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+
+.screenLink:hover {
+  color: var(--ink-muted);
+}
